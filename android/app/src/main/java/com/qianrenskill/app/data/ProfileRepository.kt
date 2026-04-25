@@ -19,16 +19,15 @@ class ProfileRepository(private val context: Context) {
     }
 
     fun listBuiltinProfiles(): List<StoredProfile> {
-        return listOf(
-            StoredProfile(
-                id = "builtin-sample-contact",
-                displayName = "Sample Contact.",
-                sourceType = ProfileSource.BUILTIN,
-                originalFileName = "sample-contact.exprofile.zip",
-                importedAt = 0L,
-                location = "profiles/sample-contact.exprofile.zip",
-            )
+        val bundled = StoredProfile(
+            id = "builtin-sample-contact",
+            displayName = "Sample Contact.",
+            sourceType = ProfileSource.BUILTIN,
+            originalFileName = "sample-contact.exprofile.zip",
+            importedAt = 0L,
+            location = "profiles/sample-contact.exprofile.zip",
         )
+        return if (builtinAssetExists(bundled.location)) listOf(bundled) else emptyList()
     }
 
     @Synchronized
@@ -91,6 +90,15 @@ class ProfileRepository(private val context: Context) {
             } catch (_error: Exception) {
                 emptyList()
             }
+        }
+    }
+
+    private fun builtinAssetExists(path: String): Boolean {
+        return try {
+            context.assets.open(path).close()
+            true
+        } catch (_error: Exception) {
+            false
         }
     }
 }

@@ -13,6 +13,10 @@ runtime/
 聊天记录/
 蒸馏/
 
+profiles/*.exprofile.zip
+exes/*.exprofile.zip
+android/app/src/main/assets/profiles/*.exprofile.zip
+
 # misc
 *.log
 .DS_Store
