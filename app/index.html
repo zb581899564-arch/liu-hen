@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>留痕</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./assets/app-icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#f7f7f7">
+  <link rel="stylesheet" href="./styles/app.css">
+</head>
+<body>
+  <div class="startup-splash" aria-hidden="true">
+    <div class="startup-splash-copy">
+      <strong>留痕</strong>
+      <span data-role="startup-splash-line">那年抓住了一只蝉，就以为抓住了永远</span>
+    </div>
+  </div>
+  <div id="app" class="app-shell">
+    <main id="screen" class="screen"></main>
+    <nav class="tabbar" aria-label="主导航">
+      <button class="tabbar-button is-active" data-tab="wechat" type="button">
+        <span class="tabbar-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M6 18.3c-2.5-1.6-4-4-4-6.7C2 6.9 6.3 3 11.6 3c5.2 0 9.4 3.7 9.4 8.4s-4.2 8.5-9.4 8.5c-.7 0-1.4-.1-2.1-.2L5 21l1-2.7Z" fill="currentColor"/></svg>
+        </span>
+        <span class="tabbar-label">微信</span>
+      </button>
+      <button class="tabbar-button" data-tab="contacts" type="button">
+        <span class="tabbar-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 12.5a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm0 2.2c-4.8 0-8.7 2.5-8.7 5.5 0 .4.3.8.8.8H20a.8.8 0 0 0 .8-.8c0-3-4-5.5-8.8-5.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="tabbar-label">通讯录</span>
+      </button>
+      <button class="tabbar-button" data-tab="discover" type="button">
+        <span class="tabbar-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m14.9 9.1-6.2 2.2 2.2 6.2 6.2-2.2-2.2-6.2Z" fill="currentColor"/></svg>
+        </span>
+        <span class="tabbar-label">发现</span>
+      </button>
+      <button class="tabbar-button" data-tab="me" type="button">
+        <span class="tabbar-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm0 1.8c-4.5 0-8 2.3-8 5.1 0 .5.4.9.9.9h14.2c.5 0 .9-.4.9-.9 0-2.8-3.6-5.1-8-5.1Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="tabbar-label">我</span>
+      </button>
+    </nav>
+    <div class="home-indicator" aria-hidden="true"></div>
+  </div>
+  <script src="./state/store.js"></script>
+  <script src="./data/builtin-contacts.js"></script>
+  <script src="./lib/storage.js"></script>
+  <script src="./lib/android-host.js"></script>
+  <script src="./lib/contact-registry.js"></script>
+  <script src="./vendor/jszip.min.js"></script>
+  <script src="./lib/profile-loader.js"></script>
+  <script src="./lib/chat-engine.js"></script>
+  <script src="./lib/provider-client.js"></script>
+  <script src="./lib/response-normalizer.js"></script>
+  <script src="./lib/sticker-resolver.js"></script>
+  <script src="./lib/message-protocol.js"></script>
+  <script src="./lib/composer-state.js"></script>
+  <script src="./lib/render-guard.js"></script>
+  <script src="./lib/contact-preview.js"></script>
+  <script src="./lib/proactive-contacts.js"></script>
+  <script src="./lib/proactive-status.js"></script>
+  <script src="./lib/human-profile.js"></script>
+  <script src="./lib/splash-copy.js"></script>
+  <script src="./lib/reply-batcher.js"></script>
+  <script src="./lib/moments-store.js"></script>
+  <script src="./lib/moments-engine.js"></script>
+  <script src="./router.js"></script>
+  <script src="./views/chat-list.js"></script>
+  <script src="./views/contacts.js"></script>
+  <script src="./views/chat-thread.js"></script>
+  <script src="./views/contact-settings.js"></script>
+  <script src="./views/discover.js"></script>
+  <script src="./views/me.js"></script>
+  <script src="./main.js"></script>
+</body>
+</html>

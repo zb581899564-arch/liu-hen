@@ -1,0 +1,19 @@
+# build/cache
+android/.gradle/
+android/.tmp/
+android/**/build/
+android/local.properties
+.pytest_cache/
+**/__pycache__/
+output/
+runtime/
+.superpowers/
+
+# local data
+聊天记录/
+蒸馏/
+
+# misc
+*.log
+.DS_Store
+Thumbs.db

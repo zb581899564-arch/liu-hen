@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Conversation",
+  "type": "object",
+  "required": [
+    "conversation_id",
+    "source",
+    "participants",
+    "messages"
+  ],
+  "properties": {
+    "conversation_id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "target"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "time",
+          "speaker_id",
+          "role",
+          "type",
+          "assets",
+          "tags"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          },
+          "speaker_id": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "target"
+            ]
+          },
+          "type": {
+            "enum": [
+              "text",
+              "sticker",
+              "image",
+              "voice",
+              "video",
+              "file",
+              "system"
+            ]
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reply_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "path"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "desc": {
+                  "type": "string"
+                },
+                "sticker_id": {
+                  "type": "string"
+                },
+                "pack": {
+                  "type": "string"
+                },
+                "md5": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,9 @@
+{
+  "name": "留痕",
+  "short_name": "留痕",
+  "display": "standalone",
+  "start_url": "./index.html#/wechat",
+  "background_color": "#f7f7f7",
+  "theme_color": "#f7f7f7",
+  "icons": []
+}

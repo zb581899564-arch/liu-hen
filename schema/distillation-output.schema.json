@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationOutput",
+  "type": "object",
+  "required": [
+    "persona",
+    "relationship_context",
+    "response_patterns",
+    "memories",
+    "sticker_profile",
+    "meta"
+  ],
+  "properties": {
+    "persona": {
+      "type": "string"
+    },
+    "relationship_context": {
+      "type": "string"
+    },
+    "response_patterns": {
+      "type": "string"
+    },
+    "memories": {
+      "type": "string"
+    },
+    "sticker_profile": {
+      "type": "object"
+    },
+    "meta": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}
