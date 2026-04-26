@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { normalizeAssistantText } = require('../app/lib/response-normalizer.js');
 const { extractStickerMarker } = require('../app/lib/sticker-resolver.js');
-const { buildChatRequest, buildProactiveChatRequest } = require('../app/lib/chat-engine.js');
+const { buildChatRequest, buildProactiveChatRequest, buildContinuationChatRequest } = require('../app/lib/chat-engine.js');
 
 test('normalizeAssistantText hides think tags but keeps final text', () => {
   const result = normalizeAssistantText('<think>secret</think>okay, say it first.');
@@ -209,4 +209,32 @@ test('buildProactiveChatRequest asks assistant to start a natural conversation',
 
   assert.equal(payload.model, 'deepseek-chat');
   assert.match(payload.messages[payload.messages.length - 1].content, /sticker/);
+});
+
+test('buildContinuationChatRequest describes a natural continuation turn', () => {
+  const request = buildContinuationChatRequest({
+    profile: {
+      displayName: 'Contact A',
+      userName: 'User A',
+      sections: {
+        persona: 'Soft and concise.',
+        relationship_context: 'Close but restrained.',
+        response_patterns: 'Often follows up with one short line.',
+        memories: 'Old shared stories.',
+      },
+      stickerProfile: { high_frequency_md5: [] },
+    },
+    history: [],
+    settings: { model: 'test-model' },
+    continuation: {
+      intent: 'follow-up-question',
+      source: 'reply',
+      consecutiveAssistantCount: 1,
+    },
+  });
+
+  assert.equal(request.model, 'test-model');
+  assert.match(request.messages[1].content, /Continue the current conversation naturally/);
+  assert.match(request.messages[1].content, /Do not ask a question and answer it yourself/);
+  assert.match(request.messages[1].content, /Intent: follow-up-question/);
 });

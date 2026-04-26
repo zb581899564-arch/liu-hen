@@ -90,6 +90,38 @@
     return escapeAttribute(value).replace(/'/g, '&#39;');
   }
 
+  function safeMediaUrl(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      return '';
+    }
+    const lower = text.toLowerCase();
+    if (
+      lower.startsWith('blob:') ||
+      lower.startsWith('file:') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('http://') ||
+      lower.startsWith('data:image/')
+    ) {
+      return text;
+    }
+    if (!lower.includes(':') && !lower.startsWith('//')) {
+      return text;
+    }
+    return '';
+  }
+
+  function safeCssUrl(value) {
+    return safeMediaUrl(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\)/g, '\\)');
+  }
+
+  function renderAvatar(role, avatarUrl) {
+    const safeUrl = safeCssUrl(avatarUrl || '');
+    const className = role === 'user' ? 'thread-avatar thread-avatar-user' : 'thread-avatar';
+    const style = safeUrl ? ' style="background-image:url(\'' + escapeAttribute(safeUrl) + '\')"' : '';
+    return '<span class="' + className + '"' + style + '></span>';
+  }
+
   function renderInlineEmojiText(text) {
     return escapeHtml(text).replace(/\[([^\[\]\s]{1,8})\]/g, function (match, name) {
       const emoji = WECHAT_INLINE_EMOJI[name];
@@ -110,10 +142,12 @@
     }
 
     if (message.attachmentType === 'image') {
+      const imageUrl = safeMediaUrl(message.imageUrl || '');
+      const fileName = message.fileName || 'image';
       return [
         '<div class="attachment-image-card">',
-        '<img class="attachment-image" src="' + (message.imageUrl || '') + '" alt="' + (message.fileName || 'image') + '">',
-        message.fileName ? '<div class="attachment-caption">' + message.fileName + '</div>' : '',
+        '<img class="attachment-image" src="' + escapeAttribute(imageUrl) + '" alt="' + escapeAttribute(fileName) + '">',
+        message.fileName ? '<div class="attachment-caption">' + escapeHtml(message.fileName) + '</div>' : '',
         '</div>',
       ].join('');
     }
@@ -123,8 +157,8 @@
         '<div class="file-card">',
         '<div class="file-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4.5h6l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 19V6A1.5 1.5 0 0 1 7.5 4.5Z"></path><path d="M13 4.5V9h4.5"></path></svg></div>',
         '<div class="file-meta">',
-        '<div class="file-name">' + (message.fileName || 'Attachment') + '</div>',
-        message.fileSizeLabel ? '<div class="file-size">' + message.fileSizeLabel + '</div>' : '',
+        '<div class="file-name">' + escapeHtml(message.fileName || 'Attachment') + '</div>',
+        message.fileSizeLabel ? '<div class="file-size">' + escapeHtml(message.fileSizeLabel) + '</div>' : '',
         '</div>',
         '</div>',
       ].join('');
@@ -153,23 +187,19 @@
 
   function renderMessageHtml(message) {
     if (message.kind === 'time' || message.kind === 'system') {
-      return '<div class="thread-meta-label">' + message.text + '</div>';
+      return '<div class="thread-meta-label">' + escapeHtml(message.text || '') + '</div>';
     }
 
     return [
       '<article class="thread-row thread-row-' + message.role + (message.sendStatus === 'failed' ? ' thread-row-failed' : '') + '">',
-      message.role === 'assistant'
-        ? '<span class="thread-avatar" style="background-image:url(\'' + (message.avatarUrl || '') + '\')"></span>'
-        : '',
+      message.role === 'assistant' ? renderAvatar('assistant', message.avatarUrl || '') : '',
       '<div class="bubble bubble-' + message.role + '">',
       message.stickerUrl
-        ? '<img class="sticker" src="' + message.stickerUrl + '" alt="' + (message.stickerMd5 || '') + '">'
+        ? '<img class="sticker" src="' + escapeAttribute(safeMediaUrl(message.stickerUrl || '')) + '" alt="' + escapeAttribute(message.stickerMd5 || '') + '">'
         : renderAttachment(message),
       renderFailureAction(message),
       '</div>',
-      message.role === 'user'
-        ? '<span class="thread-avatar thread-avatar-user" style="background-image:url(\'' + (message.avatarUrl || '') + '\')"></span>'
-        : '',
+      message.role === 'user' ? renderAvatar('user', message.avatarUrl || '') : '',
       '</article>',
     ].join('');
   }

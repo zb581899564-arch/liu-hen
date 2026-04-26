@@ -7,6 +7,8 @@ const {
   getReplyDelayMs,
   joinPendingUserMessages,
 } = require('../app/lib/reply-batcher.js');
+const fs = require('node:fs');
+const path = require('node:path');
 
 test('reply batch joins consecutive user messages as one request', () => {
   const batch = createReplyBatch(1000);
@@ -31,4 +33,9 @@ test('reply delay gives the user room to send a few messages before the model re
   assert.equal(firstDelay, 8000);
   assert.equal(secondDelay, 9000);
   assert.equal(cappedDelay, 4100);
+});
+
+test('main reply flow can open a continuation window after assistant reply', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  assert.match(source, /scheduleContinuationForContact\(contact/);
 });

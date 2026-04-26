@@ -6,6 +6,7 @@
   const CHAT_PERSISTENCE_KEY = 'wechatProfileChatPersistence';
   const CONTACT_PREFERENCES_KEY = 'wechatProfileContactPreferences';
   const MOMENTS_KEY = 'wechatProfileMoments';
+  const PROACTIVE_RUNTIME_KEY = 'wechatProfileProactiveRuntime';
   const PERMANENT_PREFIX = 'permanent-';
   const PROACTIVE_FREQUENCIES = ['gentle', 'normal', 'frequent'];
 
@@ -447,12 +448,31 @@
     }
   }
 
+  function saveProactiveRuntime(runtimeBySlug) {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+    localStorage.setItem(PROACTIVE_RUNTIME_KEY, JSON.stringify(runtimeBySlug || {}));
+  }
+
+  function loadProactiveRuntime() {
+    if (typeof localStorage === 'undefined') {
+      return {};
+    }
+    try {
+      return readJson(localStorage.getItem(PROACTIVE_RUNTIME_KEY) || '{}', {});
+    } catch (_error) {
+      return {};
+    }
+  }
+
   const api = {
     CONTACTS_KEY,
     APPEARANCE_KEY,
     CHAT_PERSISTENCE_KEY,
     CONTACT_PREFERENCES_KEY,
     MOMENTS_KEY,
+    PROACTIVE_RUNTIME_KEY,
     saveContacts,
     loadContacts,
     saveContactPreferences,
@@ -464,6 +484,8 @@
     loadChatPersistence,
     saveMoments,
     loadMoments,
+    saveProactiveRuntime,
+    loadProactiveRuntime,
     sanitizeMessagesForPersistence,
     sanitizeScheduledMessagesForPersistence,
     normalizeProactiveSettings,

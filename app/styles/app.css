@@ -9,6 +9,9 @@
   --header: #f7f7f7;
   --safe-top: max(env(safe-area-inset-top, 0px), 12px);
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  --motion-fast: 140ms;
+  --motion-medium: 180ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
 * {
@@ -42,7 +45,7 @@ body {
   place-items: center;
   background: #fff;
   color: #111;
-  animation: startup-splash-out 2600ms cubic-bezier(0.2, 0, 0, 1) forwards;
+  animation: startup-splash-out 2600ms var(--motion-ease) forwards;
   pointer-events: none;
 }
 
@@ -52,7 +55,7 @@ body {
   justify-items: center;
   padding: 24px;
   text-align: center;
-  animation: startup-copy-in 1800ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation: startup-copy-in 1800ms var(--motion-ease) both;
 }
 
 .startup-splash-copy strong {
@@ -375,8 +378,7 @@ body {
 }
 
 .page-panel {
-  animation: page-enter 120ms cubic-bezier(0.2, 0, 0, 1) both;
-  will-change: transform, opacity;
+  animation: page-enter var(--motion-medium) var(--motion-ease) both;
 }
 
 .thread-messages {
@@ -392,15 +394,16 @@ body {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   transform: translateZ(0);
-  will-change: scroll-position;
 }
 
 .thread-row {
   display: grid;
   align-items: start;
   gap: 8px;
-  animation: message-in 80ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation: message-in var(--motion-fast) var(--motion-ease) both;
   contain: layout paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 58px;
   transform: translateZ(0);
 }
 
@@ -729,7 +732,7 @@ body {
 
   40% {
     opacity: 1;
-    transform: translateY(-3px);
+    transform: translateY(-2px);
   }
 }
 
@@ -921,7 +924,7 @@ body {
 .thread-more,
 .tabbar-button,
 .chat-row {
-  transition: transform 90ms cubic-bezier(0.2, 0, 0, 1), background-color 90ms cubic-bezier(0.2, 0, 0, 1), opacity 90ms cubic-bezier(0.2, 0, 0, 1);
+  transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease), opacity var(--motion-fast) var(--motion-ease);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1017,7 +1020,7 @@ body {
   font: inherit;
   font-size: 14px;
   font-weight: 500;
-  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);
+  transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1052,6 +1055,13 @@ body {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
+}
+
+.stable-discover-update .page-panel,
+.stable-discover-update .moment-card {
+  animation: none;
 }
 
 .moment-head {
@@ -1113,7 +1123,7 @@ body {
   font-size: 13px;
   line-height: 1;
   padding: 9px 12px;
-  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);
+  transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
   -webkit-tap-highlight-color: transparent;
 }
 

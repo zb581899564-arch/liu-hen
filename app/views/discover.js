@@ -142,13 +142,21 @@
       renderDiscoverTabButton('memory', activeTab, '记忆'),
       '</div>',
       '</div>',
-      '<div class="discover-pane discover-pane-' + activeTab + '">',
+      renderDiscoverPaneHtml(args),
+    ].join('');
+  }
+
+  function renderDiscoverPaneHtml(args) {
+    const activeTab = args && args.activeTab === 'memory' ? 'memory' : 'moments';
+
+    return [
+      '<div class="discover-pane discover-pane-' + activeTab + '" data-role="discover-pane">',
       activeTab === 'moments' ? renderMomentsPane(args) : renderMemoryPane(args),
       '</div>',
     ].join('');
   }
 
-  const api = { renderDiscoverView };
+  const api = { renderDiscoverPaneHtml, renderDiscoverView };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

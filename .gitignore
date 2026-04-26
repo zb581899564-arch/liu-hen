@@ -8,6 +8,7 @@ android/local.properties
 output/
 runtime/
 .superpowers/
+docs/superpowers/
 
 # local data
 聊天记录/
@@ -21,3 +22,11 @@ android/app/src/main/assets/profiles/*.exprofile.zip
 *.log
 .DS_Store
 Thumbs.db
+
+# private distilled profiles and personal evidence
+profiles/*
+!profiles/README.md
+exes/*
+!exes/example_xiaomei/
+!exes/example_xiaomei/**
+android/app/src/main/assets/profiles/

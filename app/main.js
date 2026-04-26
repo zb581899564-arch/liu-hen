@@ -40,6 +40,12 @@
     saveMoments: function () {
       return null;
     },
+    loadProactiveRuntime: function () {
+      return {};
+    },
+    saveProactiveRuntime: function () {
+      return null;
+    },
     normalizeProactiveSettings: function (settings) {
       const source = settings || {};
       return {
@@ -85,6 +91,89 @@
       };
     },
   };
+  const proactiveRuntimeApi = window.ExProfileProactiveRuntime || {
+    normalizeProactiveRuntimeState: function (state) {
+      return state || {};
+    },
+    normalizeRuntimeEntry: function (entry) {
+      return {
+        mode: 'idle',
+        intent: '',
+        consecutiveAssistantCount: 0,
+        lastUserAt: 0,
+        lastAssistantAt: 0,
+        lastProactiveAt: 0,
+        nextContinuationAt: 0,
+        cooldownUntil: 0,
+        lastContinuationReason: '',
+        ...(entry || {}),
+      };
+    },
+    touchUserActivity: function (entry, nowMs) {
+      return {
+        ...this.normalizeRuntimeEntry(entry),
+        mode: 'engaged',
+        intent: '',
+        consecutiveAssistantCount: 0,
+        lastUserAt: nowMs,
+        nextContinuationAt: 0,
+        cooldownUntil: 0,
+        lastContinuationReason: '',
+      };
+    },
+    touchAssistantActivity: function (entry, nowMs, options) {
+      const next = this.normalizeRuntimeEntry(entry);
+      const opts = options || {};
+      next.mode = 'waiting-user';
+      next.intent = typeof opts.intent === 'string' ? opts.intent : next.intent;
+      next.lastAssistantAt = nowMs;
+      if (opts.proactive) {
+        next.lastProactiveAt = nowMs;
+      }
+      next.nextContinuationAt = 0;
+      next.lastContinuationReason = '';
+      next.consecutiveAssistantCount = opts.continuation
+        ? Number(next.consecutiveAssistantCount || 0) + 1
+        : Math.max(1, Number(next.consecutiveAssistantCount || 0));
+      return next;
+    },
+    setContinuationTarget: function (entry, dueAt, reason) {
+      return {
+        ...this.normalizeRuntimeEntry(entry),
+        mode: 'continuing',
+        nextContinuationAt: dueAt,
+        lastContinuationReason: reason || '',
+      };
+    },
+    clearContinuationTarget: function (entry) {
+      const next = this.normalizeRuntimeEntry(entry);
+      next.nextContinuationAt = 0;
+      if (next.mode === 'continuing') {
+        next.mode = 'waiting-user';
+      }
+      return next;
+    },
+    enterCooldown: function (entry, nowMs, delayMs, reason) {
+      return {
+        ...this.normalizeRuntimeEntry(entry),
+        mode: 'cooling',
+        nextContinuationAt: 0,
+        cooldownUntil: nowMs + Math.max(0, delayMs || 0),
+        lastContinuationReason: reason || '',
+      };
+    },
+  };
+  const proactiveContinuationApi = window.ExProfileProactiveContinuation || {
+    shouldScheduleContinuation: function () {
+      return { allowed: false, reason: 'missing-api' };
+    },
+    chooseContinuationIntent: function () {
+      return 'addendum';
+    },
+    getContinuationDelayMs: function () {
+      return 12000;
+    },
+  };
   const baseMessages = {};
   const chatPersistenceState = storageApi.loadChatPersistence();
   Object.keys(chatPersistenceState.messages || {}).forEach(function (slug) {
@@ -97,6 +186,9 @@
   let chatRetentionEnabled = Boolean(chatPersistenceState.enabled);
   let doNotDisturbEnabled = Boolean(chatPersistenceState.doNotDisturbEnabled);
   let proactiveBySlug = storageApi.normalizeProactiveBySlug(chatPersistenceState.proactiveBySlug);
+  let proactiveRuntimeBySlug = proactiveRuntimeApi.normalizeProactiveRuntimeState(
+    storageApi.loadProactiveRuntime ? storageApi.loadProactiveRuntime() : {}
+  );
   let selectedAvatarContactSlug = baseContacts[0] ? baseContacts[0].slug : '';
   let settingsState = { ...defaultSettings };
   let settingsStatus = '';
@@ -119,15 +211,19 @@
   let proactiveTimerToken = 0;
   let proactiveWatchdogId = null;
   let proactiveHeartbeatFrameId = null;
+  let proactiveHeartbeatTimeoutId = null;
   let proactiveHeartbeatLastTickAt = 0;
   let proactiveLastAttemptBySlug = {};
   let proactiveInFlight = false;
+  const continuationTimersBySlug = {};
   let deferredRenderOptions = null;
   let threadViewportSyncFrameId = 0;
   let momentsState = storageApi.loadMoments ? storageApi.loadMoments() : { activeTab: 'moments', postsBySlug: {}, nextPostAtBySlug: {} };
   let openMomentCommentPostId = '';
   let momentCommentDraftByPostId = {};
   let momentReplyTimersByPostId = {};
+  let momentsFreshTimerId = null;
+  let momentsPersistTimerId = null;
 
   function normalizeSettings(settings) {
     const source = settings || {};
@@ -173,6 +269,67 @@
 
   function hasApiSettings() {
     return Boolean(settingsState.baseUrl && settingsState.apiKey && settingsState.model);
+  }
+
+  function persistProactiveRuntime() {
+    if (storageApi.saveProactiveRuntime) {
+      storageApi.saveProactiveRuntime(
+        proactiveRuntimeApi.normalizeProactiveRuntimeState(proactiveRuntimeBySlug)
+      );
+    }
+  }
+
+  function getDefaultRuntimeState() {
+    return proactiveRuntimeApi.normalizeRuntimeEntry
+      ? proactiveRuntimeApi.normalizeRuntimeEntry({})
+      : {
+          mode: 'idle',
+          intent: '',
+          consecutiveAssistantCount: 0,
+          lastUserAt: 0,
+          lastAssistantAt: 0,
+          lastProactiveAt: 0,
+          nextContinuationAt: 0,
+          cooldownUntil: 0,
+          lastContinuationReason: '',
+        };
+  }
+
+  function getRuntimeForSlug(slug) {
+    proactiveRuntimeBySlug = proactiveRuntimeApi.normalizeProactiveRuntimeState(proactiveRuntimeBySlug);
+    const permanentSlug = getPermanentSlug(slug);
+    return proactiveRuntimeBySlug[permanentSlug] || getDefaultRuntimeState();
+  }
+
+  function setRuntimeForSlug(slug, runtime) {
+    proactiveRuntimeBySlug = {
+      ...proactiveRuntimeApi.normalizeProactiveRuntimeState(proactiveRuntimeBySlug),
+      [getPermanentSlug(slug)]: proactiveRuntimeApi.normalizeRuntimeEntry
+        ? proactiveRuntimeApi.normalizeRuntimeEntry(runtime)
+        : runtime,
+    };
+    persistProactiveRuntime();
+  }
+
+  function clearContinuationTimer(slug) {
+    const permanentSlug = getPermanentSlug(slug);
+    if (continuationTimersBySlug[permanentSlug]) {
+      window.clearTimeout(continuationTimersBySlug[permanentSlug]);
+      delete continuationTimersBySlug[permanentSlug];
+    }
+  }
+
+  function hasScheduledMessagesForSlug(slug) {
+    return Boolean((scheduledBySlug[getPermanentSlug(slug)] || []).length);
+  }
+
+  function hasContinuationWindowForSlug(slug) {
+    const runtime = getRuntimeForSlug(slug);
+    return Number(runtime.nextContinuationAt || 0) > Date.now();
+  }
+
+  function getContinuationCooldownMs(source) {
+    return source === 'reply' ? 45000 : 120000;
   }
 
   function resetProactiveScheduleForSlug(slug) {
@@ -450,6 +607,16 @@
     }
   }
 
+  function persistMomentsSoon() {
+    if (momentsPersistTimerId) {
+      window.clearTimeout(momentsPersistTimerId);
+    }
+    momentsPersistTimerId = window.setTimeout(function () {
+      momentsPersistTimerId = null;
+      persistMoments();
+    }, 0);
+  }
+
   function formatMomentTime(timestamp) {
     const value = Number(timestamp || 0);
     if (!value) {
@@ -501,8 +668,26 @@
         postsBySlug: nextState.postsBySlug,
         nextPostAtBySlug: nextState.nextPostAtBySlug,
       };
-      persistMoments();
+      persistMomentsSoon();
     }
+  }
+
+  function scheduleMomentsFreshForContacts(contacts) {
+    if (momentsFreshTimerId) {
+      window.clearTimeout(momentsFreshTimerId);
+    }
+    const scheduledContacts = (Array.isArray(contacts) ? contacts : []).map(function (contact) {
+      return { ...contact };
+    });
+    momentsFreshTimerId = window.setTimeout(function () {
+      momentsFreshTimerId = null;
+      ensureMomentsFreshForContacts(scheduledContacts);
+      if (currentRoute().tab === 'discover') {
+        if (!renderStableDiscoverUpdate(currentRoute())) {
+          render();
+        }
+      }
+    }, 80);
   }
 
   function findMomentPostById(postId, contacts) {
@@ -510,6 +695,16 @@
     return feed.find(function (post) {
       return post.id === postId;
     }) || null;
+  }
+
+  function buildDiscoverViewArgs(contacts) {
+    return {
+      contacts: contacts,
+      activeTab: momentsState.activeTab,
+      momentsFeed: buildMomentsFeed(contacts),
+      openCommentPostId: openMomentCommentPostId,
+      commentDraftByPostId: momentCommentDraftByPostId,
+    };
   }
 
   function syncSelectedContact(contacts) {
@@ -569,13 +764,7 @@
     }
 
     if (route.tab === 'discover') {
-      return window.ExProfileDiscoverView.renderDiscoverView({
-        contacts: contacts,
-        activeTab: momentsState.activeTab,
-        momentsFeed: buildMomentsFeed(contacts),
-        openCommentPostId: openMomentCommentPostId,
-        commentDraftByPostId: momentCommentDraftByPostId,
-      });
+      return window.ExProfileDiscoverView.renderDiscoverView(buildDiscoverViewArgs(contacts));
     }
 
     if (route.tab === 'me') {
@@ -668,12 +857,17 @@
       threadViewportSyncFrameId = 0;
       const threadMessages = screen.querySelector('[data-role="thread-messages"]');
       if (threadMessages) {
-        const shouldStick = opts.forceThreadBottom || !scrollState || scrollState.shouldStick;
-        if (shouldStick) {
-          threadMessages.scrollTop = threadMessages.scrollHeight;
-        } else {
-          const maxScrollTop = Math.max(0, threadMessages.scrollHeight - threadMessages.clientHeight);
-          threadMessages.scrollTop = Math.min(scrollState.scrollTop, maxScrollTop);
+        const target = window.ExProfileRenderGuard && window.ExProfileRenderGuard.getThreadScrollTarget
+          ? window.ExProfileRenderGuard.getThreadScrollTarget({
+              scrollState: scrollState,
+              forceThreadBottom: opts.forceThreadBottom,
+              scrollHeight: threadMessages.scrollHeight,
+              clientHeight: threadMessages.clientHeight,
+              currentScrollTop: threadMessages.scrollTop,
+            })
+          : { shouldUpdate: true, scrollTop: threadMessages.scrollHeight };
+        if (target.shouldUpdate) {
+          threadMessages.scrollTop = target.scrollTop;
         }
       }
       keepPageScrollLocked();
@@ -739,12 +933,18 @@
     const scrollState = captureThreadScrollState(route);
     const isTyping = Boolean(pendingReplyBySlug[route.slug] || pendingTypingMessageBySlug[route.slug]);
     screen.classList.add('stable-thread-update');
-    title.textContent = window.ExProfileChatThreadView.renderChatThreadTitle
+    const nextTitle = window.ExProfileChatThreadView.renderChatThreadTitle
       ? window.ExProfileChatThreadView.renderChatThreadTitle({ contact: contact, isTyping: isTyping })
       : contact.displayName;
-    threadMessages.innerHTML = window.ExProfileChatThreadView.renderChatThreadMessagesHtml({
+    if (title.textContent !== nextTitle) {
+      title.textContent = nextTitle;
+    }
+    const nextMessagesHtml = window.ExProfileChatThreadView.renderChatThreadMessagesHtml({
       messages: buildMessagesForContact(contact),
     });
+    if (threadMessages.innerHTML !== nextMessagesHtml) {
+      threadMessages.innerHTML = nextMessagesHtml;
+    }
     syncThreadViewport(route, scrollState, options);
     refreshProactiveStatusLabels();
     window.requestAnimationFrame(function () {
@@ -753,11 +953,37 @@
     return true;
   }
 
+  function renderStableDiscoverUpdate(route) {
+    if (!route || route.tab !== 'discover' || !window.ExProfileDiscoverView || !window.ExProfileDiscoverView.renderDiscoverPaneHtml) {
+      return false;
+    }
+    const screen = document.getElementById('screen');
+    const pane = document.querySelector('[data-role="discover-pane"]');
+    if (!screen || !pane) {
+      return false;
+    }
+    const scrollTop = screen.scrollTop;
+    const nextPaneHtml = window.ExProfileDiscoverView.renderDiscoverPaneHtml(buildDiscoverViewArgs(buildContacts()));
+    screen.classList.add('stable-discover-update');
+    document.querySelectorAll('[data-role="discover-tab"]').forEach(function (tabButton) {
+      const isActive = tabButton.dataset.tab === momentsState.activeTab;
+      tabButton.classList.toggle('is-active', isActive);
+    });
+    if (pane.outerHTML !== nextPaneHtml) {
+      pane.outerHTML = nextPaneHtml;
+    }
+    screen.scrollTop = scrollTop;
+    window.requestAnimationFrame(function () {
+      screen.classList.remove('stable-discover-update');
+    });
+    return true;
+  }
+
   function render(options) {
     const route = window.ExProfileAppRouter.resolveRoute(window.location.hash);
     const contacts = buildContacts();
     if (route.tab === 'discover') {
-      ensureMomentsFreshForContacts(contacts);
+      scheduleMomentsFreshForContacts(contacts);
     }
     if (options && options.preferStableThreadUpdate && route.view === 'chat-thread') {
       if (renderStableChatThreadUpdate(route, options)) {
@@ -887,6 +1113,7 @@
     };
     render();
     scheduleAllScheduledMessages();
+    scheduleAllContinuationTimers();
     scheduleProactiveChat();
     hydrateProfileInsights().catch(function () {
       return null;
@@ -1157,6 +1384,12 @@
       for (const item of dueItems) {
         queue.push(await buildAssistantMessageFromProtocolItem(contact, bundle, item));
       }
+      scheduleContinuationForContact(contact, 'reply', markAssistantActivity(contact, {
+        at: Date.now(),
+        proactive: true,
+        continuation: true,
+        intent: 'addendum',
+      }));
     }
     persistQueueIfPermanent(slug);
     render({ forceThreadBottom: currentRoute().slug === slug, deferIfComposerFocused: true, preferStableThreadUpdate: currentRoute().slug === slug });
@@ -1182,6 +1415,23 @@
 
   function scheduleAllScheduledMessages() {
     Object.keys(scheduledBySlug || {}).forEach(scheduleScheduledMessagesForSlug);
+  }
+
+  function scheduleAllContinuationTimers() {
+    Object.keys(proactiveRuntimeBySlug || {}).forEach(function (slug) {
+      const contact = findContactBySlug(slug);
+      if (!contact) {
+        return;
+      }
+      const runtime = getRuntimeForSlug(slug);
+      if (Number(runtime.nextContinuationAt || 0) > Date.now()) {
+        scheduleContinuationForContact(
+          contact,
+          Number(runtime.lastProactiveAt || 0) >= Number(runtime.lastUserAt || 0) ? 'proactive' : 'reply',
+          runtime
+        );
+      }
+    });
   }
 
   function runScheduledMessageWatchdog() {
@@ -1391,6 +1641,228 @@
     });
   }
 
+  function markUserActivity(contact, timestamp) {
+    if (!contact) {
+      return;
+    }
+    clearContinuationTimer(contact.slug);
+    setRuntimeForSlug(contact.slug, proactiveRuntimeApi.touchUserActivity(
+      getRuntimeForSlug(contact.slug),
+      Math.max(0, Number(timestamp) || Date.now())
+    ));
+  }
+
+  function markAssistantActivity(contact, options) {
+    if (!contact) {
+      return getDefaultRuntimeState();
+    }
+    const nextRuntime = proactiveRuntimeApi.touchAssistantActivity(
+      getRuntimeForSlug(contact.slug),
+      Math.max(0, Number(options && options.at) || Date.now()),
+      options || {}
+    );
+    setRuntimeForSlug(contact.slug, nextRuntime);
+    return nextRuntime;
+  }
+
+  async function runContinuationForContact(slug, source) {
+    const permanentSlug = getPermanentSlug(slug);
+    clearContinuationTimer(permanentSlug);
+    const contact = findContactBySlug(permanentSlug);
+    if (!contact) {
+      return { attempted: false, delivered: false, reason: 'missing-contact' };
+    }
+
+    const now = Date.now();
+    const runtime = getRuntimeForSlug(permanentSlug);
+    const decision = proactiveContinuationApi.shouldScheduleContinuation({
+      nowMs: now,
+      runtime: runtime,
+      hasPendingReply: Boolean(pendingReplyBySlug[permanentSlug]),
+      hasScheduledMessages: hasScheduledMessagesForSlug(permanentSlug),
+      maxConsecutiveAssistant: 4,
+      source: source,
+    });
+    if (!decision.allowed) {
+      if (decision.reason === 'max-consecutive' || decision.reason === 'cooling') {
+        setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.enterCooldown(
+          runtime,
+          now,
+          getContinuationCooldownMs(source),
+          decision.reason
+        ));
+      } else {
+        setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.clearContinuationTarget(runtime));
+      }
+      return { attempted: false, delivered: false, reason: decision.reason };
+    }
+
+    if (!hasApiSettings() || doNotDisturbEnabled) {
+      setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.enterCooldown(
+        runtime,
+        now,
+        getContinuationCooldownMs(source),
+        hasApiSettings() ? 'do-not-disturb' : 'missing-api-settings'
+      ));
+      return { attempted: false, delivered: false, reason: hasApiSettings() ? 'do-not-disturb' : 'missing-api-settings' };
+    }
+
+    const queue = getMessageQueue(permanentSlug);
+    pendingReplyBySlug[permanentSlug] = true;
+    const pendingMessageId = ensureAssistantTypingPlaceholder(contact);
+    render({
+      forceThreadBottom: currentRoute().slug === permanentSlug,
+      deferIfComposerFocused: true,
+      preferStableThreadUpdate: currentRoute().slug === permanentSlug,
+    });
+
+    try {
+      await waitMs(getProactiveTypingDelayMs());
+      const profileBundle = await loadProfileBundleForContact(contact);
+      const latestRuntime = getRuntimeForSlug(permanentSlug);
+      const payload = window.ExProfileChatEngine.buildContinuationChatRequest({
+        profile: profileBundle,
+        history: buildChatHistory(queue),
+        settings: {
+          model: settingsState.model,
+          temperature: 0.92,
+        },
+        continuation: {
+          intent: latestRuntime.intent || proactiveContinuationApi.chooseContinuationIntent({
+            runtime: latestRuntime,
+            source: source,
+          }),
+          source: source,
+          consecutiveAssistantCount: latestRuntime.consecutiveAssistantCount,
+        },
+      });
+      const responseJson = await window.ExProfileProviderClient.sendChatRequest(
+        settingsState.baseUrl,
+        settingsState.apiKey,
+        payload
+      );
+      const rawAssistantText = window.ExProfileProviderClient.readAssistantText(responseJson);
+      removeAssistantTypingPlaceholder(permanentSlug, pendingMessageId);
+      const assistantPayload = await buildAssistantMessages(contact, profileBundle, rawAssistantText, {
+        origin: 'proactive',
+        sentAt: Date.now(),
+      });
+      assistantPayload.messages.forEach(function (message) {
+        queue.push(message);
+      });
+      enqueueScheduledAssistantMessages(contact, profileBundle, assistantPayload.scheduled);
+      scheduleContinuationForContact(contact, 'proactive', markAssistantActivity(contact, {
+        at: Date.now(),
+        proactive: true,
+        continuation: false,
+        intent: '',
+      }));
+      const nextRuntime = markAssistantActivity(contact, {
+        at: Date.now(),
+        proactive: true,
+        continuation: true,
+        intent: (getRuntimeForSlug(permanentSlug).intent || '') || proactiveContinuationApi.chooseContinuationIntent({
+          runtime: latestRuntime,
+          source: source,
+        }),
+      });
+      scheduleContinuationForContact(contact, source, nextRuntime);
+      persistQueueIfPermanent(permanentSlug);
+      return { attempted: true, delivered: true, reason: 'success', messageCount: assistantPayload.messages.length };
+    } catch (_error) {
+      removeAssistantTypingPlaceholder(permanentSlug, pendingMessageId);
+      setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.enterCooldown(
+        getRuntimeForSlug(permanentSlug),
+        now,
+        getContinuationCooldownMs(source),
+        'request-failed'
+      ));
+      persistQueueIfPermanent(permanentSlug);
+      return { attempted: true, delivered: false, reason: 'request-failed' };
+    } finally {
+      pendingReplyBySlug[permanentSlug] = false;
+      render({
+        forceThreadBottom: currentRoute().slug === permanentSlug,
+        deferIfComposerFocused: true,
+        preferStableThreadUpdate: currentRoute().slug === permanentSlug,
+      });
+    }
+  }
+
+  function scheduleContinuationForContact(contact, source, runtimeOverride) {
+    if (!contact) {
+      return;
+    }
+    const permanentSlug = getPermanentSlug(contact.slug);
+    clearContinuationTimer(permanentSlug);
+
+    const runtime = runtimeOverride || getRuntimeForSlug(permanentSlug);
+    const decision = proactiveContinuationApi.shouldScheduleContinuation({
+      nowMs: Date.now(),
+      runtime: runtime,
+      hasPendingReply: Boolean(pendingReplyBySlug[permanentSlug]),
+      hasScheduledMessages: hasScheduledMessagesForSlug(permanentSlug),
+      maxConsecutiveAssistant: 4,
+      source: source,
+    });
+
+    if (!decision.allowed) {
+      if (decision.reason === 'max-consecutive') {
+        setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.enterCooldown(
+          runtime,
+          Date.now(),
+          getContinuationCooldownMs(source),
+          decision.reason
+        ));
+      } else {
+        setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.clearContinuationTarget(runtime));
+      }
+      return;
+    }
+
+    const intent = proactiveContinuationApi.chooseContinuationIntent({
+      runtime: runtime,
+      source: source,
+    });
+    const delayMs = proactiveContinuationApi.getContinuationDelayMs({
+      source: source,
+      consecutiveAssistantCount: runtime.consecutiveAssistantCount,
+    });
+    const dueAt = Date.now() + Math.max(1, delayMs);
+    setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.setContinuationTarget(runtime, dueAt, decision.reason || intent));
+    const timerId = window.setTimeout(function () {
+      runContinuationForContact(permanentSlug, source).catch(function () {
+        setRuntimeForSlug(permanentSlug, proactiveRuntimeApi.enterCooldown(
+          getRuntimeForSlug(permanentSlug),
+          Date.now(),
+          getContinuationCooldownMs(source),
+          'request-failed'
+        ));
+      });
+    }, Math.max(0, dueAt - Date.now()));
+    continuationTimersBySlug[permanentSlug] = timerId;
+    const scheduledRuntime = getRuntimeForSlug(permanentSlug);
+    setRuntimeForSlug(permanentSlug, {
+      ...scheduledRuntime,
+      intent: intent,
+    });
+  }
+
+  function runContinuationWatchdog() {
+    Object.keys(proactiveRuntimeBySlug || {}).forEach(function (slug) {
+      const runtime = getRuntimeForSlug(slug);
+      if (
+        Number(runtime.nextContinuationAt || 0) > 0 &&
+        Date.now() >= Number(runtime.nextContinuationAt || 0) &&
+        !pendingReplyBySlug[slug]
+      ) {
+        runContinuationForContact(slug, Number(runtime.lastProactiveAt || 0) >= Number(runtime.lastUserAt || 0) ? 'proactive' : 'reply').catch(function () {
+          return null;
+        });
+      }
+    });
+  }
+
   function scheduleProactiveChat() {
     if (proactiveTimerId) {
       window.clearTimeout(proactiveTimerId);
@@ -1469,30 +1941,42 @@
 
   function runProactiveHeartbeat() {
     const now = Date.now();
-    if (!proactiveHeartbeatLastTickAt || now - proactiveHeartbeatLastTickAt >= 1000) {
-      proactiveHeartbeatLastTickAt = now;
-      refreshProactiveStatusLabels();
-      runProactiveWatchdog();
-      runScheduledMessageWatchdog();
-    }
+    proactiveHeartbeatLastTickAt = now;
+    refreshProactiveStatusLabels();
+    runProactiveWatchdog();
+    runScheduledMessageWatchdog();
+    runContinuationWatchdog();
+    scheduleProactiveHeartbeatTick();
+  }
 
-    proactiveHeartbeatFrameId = window.requestAnimationFrame(runProactiveHeartbeat);
+  function scheduleProactiveHeartbeatTick() {
+    if (proactiveHeartbeatTimeoutId) {
+      window.clearTimeout(proactiveHeartbeatTimeoutId);
+    }
+    proactiveHeartbeatTimeoutId = window.setTimeout(function () {
+      proactiveHeartbeatTimeoutId = null;
+      if (typeof window.requestAnimationFrame === 'function') {
+        proactiveHeartbeatFrameId = window.requestAnimationFrame(runProactiveHeartbeat);
+        return;
+      }
+      runProactiveHeartbeat();
+    }, 1000);
   }
 
   function startProactiveHeartbeat() {
     if (proactiveHeartbeatFrameId && typeof window.cancelAnimationFrame === 'function') {
       window.cancelAnimationFrame(proactiveHeartbeatFrameId);
     }
+    if (proactiveHeartbeatTimeoutId) {
+      window.clearTimeout(proactiveHeartbeatTimeoutId);
+      proactiveHeartbeatTimeoutId = null;
+    }
     proactiveHeartbeatLastTickAt = 0;
     if (typeof window.requestAnimationFrame === 'function') {
       proactiveHeartbeatFrameId = window.requestAnimationFrame(runProactiveHeartbeat);
       return;
     }
-    window.setInterval(function () {
-      refreshProactiveStatusLabels();
-      runProactiveWatchdog();
-      runScheduledMessageWatchdog();
-    }, 1000);
+    scheduleProactiveHeartbeatTick();
   }
 
   function getProactiveTriggerLabel(trigger) {
@@ -1733,6 +2217,12 @@
         queue.push(message);
       });
       enqueueScheduledAssistantMessages(contact, profileBundle, assistantPayload.scheduled);
+      scheduleContinuationForContact(contact, 'reply', markAssistantActivity(contact, {
+        at: Date.now(),
+        proactive: false,
+        continuation: false,
+        intent: '',
+      }));
       persistQueueIfPermanent(contact.slug);
     } catch (error) {
       removeAssistantTypingPlaceholder(contact.slug, pendingMessageId);
@@ -1783,6 +2273,7 @@
       avatarUrl: getUserAvatarUrl(),
     };
     queue.push(userMessage);
+    markUserActivity(contact, Date.now());
     persistQueueIfPermanent(contact.slug);
     input.value = '';
     render({ forceThreadBottom: true, preferStableThreadUpdate: true });
@@ -1889,7 +2380,10 @@
     }
     cancelReplyBatch(targetSlug);
     clearScheduledTimer(targetSlug);
+    clearContinuationTimer(targetSlug);
     delete scheduledBySlug[targetSlug];
+    delete proactiveRuntimeBySlug[getPermanentSlug(targetSlug)];
+    persistProactiveRuntime();
     baseMessages[targetSlug] = [];
     persistQueueIfPermanent(targetSlug);
     window.location.hash = '#/chat/' + encodeURIComponent(targetSlug);
@@ -1901,8 +2395,10 @@
       return;
     }
     momentsState = window.ExProfileMomentsStore.setDiscoverTab(momentsState, tab);
-    persistMoments();
-    render();
+    persistMomentsSoon();
+    if (!renderStableDiscoverUpdate(currentRoute())) {
+      render();
+    }
   }
 
   function toggleMomentLike(postId) {
@@ -1910,8 +2406,10 @@
       return;
     }
     momentsState = window.ExProfileMomentsStore.toggleMomentLike(momentsState, postId);
-    persistMoments();
-    render();
+    persistMomentsSoon();
+    if (!renderStableDiscoverUpdate(currentRoute())) {
+      render();
+    }
   }
 
   function deleteMomentComment(postId, commentId) {
@@ -1919,8 +2417,10 @@
       return;
     }
     momentsState = window.ExProfileMomentsStore.removeMomentComment(momentsState, postId, commentId);
-    persistMoments();
-    render();
+    persistMomentsSoon();
+    if (!renderStableDiscoverUpdate(currentRoute())) {
+      render();
+    }
   }
 
   function scheduleMomentCommentReply(post, commentText) {
@@ -1941,9 +2441,11 @@
         post.id,
         window.ExProfileMomentsEngine.createMomentCommentReply(contact, post, commentText, Date.now())
       );
-      persistMoments();
+      persistMomentsSoon();
       if (currentRoute().tab === 'discover') {
-        render();
+        if (!renderStableDiscoverUpdate(currentRoute())) {
+          render();
+        }
       }
     }, 900 + Math.floor(Math.random() * 900));
   }
@@ -1971,8 +2473,10 @@
       [postId]: '',
     };
     openMomentCommentPostId = '';
-    persistMoments();
-    render();
+    persistMomentsSoon();
+    if (!renderStableDiscoverUpdate(currentRoute())) {
+      render();
+    }
     scheduleMomentCommentReply(post, text);
   }
 
@@ -2045,7 +2549,9 @@
       if (openMomentCommentTrigger) {
         const postId = openMomentCommentTrigger.dataset.postId || '';
         openMomentCommentPostId = openMomentCommentPostId === postId ? '' : postId;
-        render();
+        if (!renderStableDiscoverUpdate(currentRoute())) {
+          render();
+        }
         const input = document.querySelector('[data-role="moment-comment-input"][data-post-id="' + postId + '"]');
         if (input) {
           input.focus();
@@ -2420,6 +2926,7 @@
   startProactiveWatchdog();
   startProactiveHeartbeat();
   scheduleAllScheduledMessages();
+  scheduleAllContinuationTimers();
   render();
   hydrateHostState().catch(function () {
     return null;

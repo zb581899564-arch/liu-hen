@@ -1,6 +1,6 @@
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open('wechat-profile-app-v24').then((cache) => {
+    caches.open('wechat-profile-app-v28').then((cache) => {
       return cache.addAll([
         './index.html',
         './favicon.ico',
@@ -22,6 +22,8 @@ self.addEventListener('install', (event) => {
         './lib/render-guard.js',
         './lib/contact-preview.js',
         './lib/proactive-contacts.js',
+        './lib/proactive-runtime.js',
+        './lib/proactive-continuation.js',
         './lib/proactive-status.js',
         './lib/human-profile.js',
         './lib/splash-copy.js',

@@ -168,7 +168,38 @@
     };
   }
 
-  const api = { buildSystemPrompt, buildChatRequest, buildProactiveChatRequest };
+  function buildContinuationPrompt(continuation) {
+    const source = continuation || {};
+    return [
+      'Continue the current conversation naturally.',
+      'This is not a brand-new topic unless the intent explicitly shifts gently.',
+      'Most of the time send one short message; occasionally two.',
+      'Do not ask a question and answer it yourself.',
+      'Do not roleplay both sides.',
+      'If it is not a good time to continue, keep the line light and soft.',
+      'Intent: ' + (source.intent || 'addendum'),
+      'Source: ' + (source.source || 'reply'),
+      'Consecutive assistant count: ' + String(source.consecutiveAssistantCount || 0),
+    ].join('\n');
+  }
+
+  function buildContinuationChatRequest(options) {
+    const settings = options.settings || {};
+    return {
+      model: settings.model,
+      temperature: typeof settings.temperature === 'number' ? settings.temperature : 0.92,
+      messages: [
+        { role: 'system', content: buildSystemPrompt(options.profile) },
+        {
+          role: 'user',
+          content: buildContinuationPrompt(options.continuation),
+        },
+        ...(options.history || []),
+      ],
+    };
+  }
+
+  const api = { buildSystemPrompt, buildChatRequest, buildProactiveChatRequest, buildContinuationChatRequest };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
